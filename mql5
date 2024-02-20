@@ -1,0 +1,87 @@
+
+//+------------------------------------------------------------------+
+//|                                                   XQ Indicator MT5|
+//|                         Developed by Forex Robot Easy Team          |
+//|                                 www.forexroboteasy.com             |
+//+------------------------------------------------------------------+
+
+//--- Include necessary libraries
+#include <MovingAverages.mqh>
+#include <RSI.mqh>
+#include <Stochastic.mqh>
+
+//--- Indicator input parameters
+input int fastMA_period = 50; // Period for fast moving average
+input int slowMA_period = 200; // Period for slow moving average
+input ENUM_APPLIED_PRICE applied_price = PRICE_CLOSE; // Applied price for moving averages
+input int rsi_period = 14; // Period for RSI
+input int stoch_period = 14; // Period for Stochastic
+
+//--- Indicator buffers
+double trendBuffer[];
+double filterBuffer[];
+double signalBuffer[];
+
+//--- Indicator initialization function
+int OnInit()
+{
+   //--- Set indicator buffers
+   SetIndexBuffer(0, trendBuffer, INDICATOR_DATA);
+   SetIndexBuffer(1, filterBuffer, INDICATOR_DATA);
+   SetIndexBuffer(2, signalBuffer, INDICATOR_DATA);
+
+   //--- Set indicator labels
+   IndicatorSetString(INDICATOR_SHORTNAME, 'XQ Indicator MT5');
+   IndicatorSetString(INDICATOR_LEVELS, '0,1');
+
+   //--- Initialize moving averages
+   MovingAverages(fastMA_period, slowMA_period, applied_price, trendBuffer);
+
+   //--- Initialize RSI
+   RSI(rsi_period, applied_price, filterBuffer);
+
+   //--- Initialize Stochastic
+   Stochastic(stoch_period, stoch_period/2, stoch_period/2, applied_price, signalBuffer);
+
+   return(INIT_SUCCEEDED);
+}
+
+//--- Indicator calculation function
+int OnCalculate(const int rates_total, const int prev_calculated, const datetime &time[], const double &open[], const double &high[], const double &low[], const double &close[], const long &tick_volume[], const long &volume[], const int &spread[])
+{
+   //--- Calculate moving averages
+   ArraySetAsSeries(trendBuffer, true);
+   ArraySetAsSeries(filterBuffer, true);
+   ArraySetAsSeries(signalBuffer, true);
+
+   int limit = MathMin(rates_total, prev_calculated);
+   for (int i = limit; i < rates_total; i++)
+   {
+      //--- Calculate moving averages
+      double fastMA = iMA(NULL, 0, fastMA_period, 0, MODE_SMA, applied_price, i);
+      double slowMA = iMA(NULL, 0, slowMA_period, 0, MODE_SMA, applied_price, i);
+
+      //--- Calculate RSI
+      double rsi = iRSI(NULL, 0, rsi_period, applied_price, i);
+
+      //--- Calculate Stochastic
+      double stochMain = iStochastic(NULL, 0, stoch_period, stoch_period/2, stoch_period/2, MODE_SMA, applied_price, i);
+      double stochSignal = iStochastic(NULL, 0, stoch_period, stoch_period/2, stoch_period/2, MODE_SMA, applied_price, i+1);
+
+      //--- Determine trend
+      if (fastMA > slowMA && rsi > 50 && stochMain > stochSignal)
+         trendBuffer[i] = 1;
+      else if (fastMA < slowMA && rsi < 50 && stochMain < stochSignal)
+         trendBuffer[i] = -1;
+      else
+         trendBuffer[i] = 0;
+
+      //--- Filter out false signals
+      filterBuffer[i] = trendBuffer[i-1] != trendBuffer[i] ? trendBuffer[i] : 0;
+
+      //--- Generate trading signals
+      signalBuffer[i] = filterBuffer[i] > 0 ? 1 : (filterBuffer[i] < 0 ? -1 : 0);
+   }
+
+   return(rates_total);
+}
